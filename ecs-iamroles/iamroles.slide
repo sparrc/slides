@@ -1,0 +1,122 @@
+# IAM Roles in the ECS Universe
+
+Cameron Sparr
+16 Dec 2020
+
+## Intro
+
+In the ECS universe, there are essentially three different IAM roles to know about. All three of these roles are interacted with by the ECS agent in different ways, which we will cover in this doc. The three roles are:
+
+1. [ECS container instance IAM role](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/instance_IAM_role.html) (aka ecsInstanceRole)
+1. [ECS task execution IAM role](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task_execution_IAM_role.html) (aka ecsTaskExecutionRole)
+1. [ECS task IAM role](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task-iam-roles.html)
+
+## Role 1: Container Instance IAM Role
+
+When launching an EC2 instance, users can specify an instance IAM role, which puts their AWS credentials on the [EC2 instance metadata endpoint](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-metadata.html). The AWS SDKs are all able to automatically read from this endpoint, meaning that without any further configuration you will have AWS access via the instance role using any standard AWS SDK (in our case, [github.com/aws-sdk-go/aws](https://github.com/aws/aws-sdk-go/)).
+
+For customers of ECS on EC2, this is the most common way to give the ECS Agent permission to call AWS APIs for tasks such as ecs.RegisterContainerInstance (registering with ECS on startup), ecr.GetAuthorizationToken (getting authorization to pull from ECR), and log.PutLogEvents (writing cloudwatch logs). ECS provides a managed role to provide the minimum necessary IAM permissions: [AmazonEC2ContainerServiceforEC2Role](https://naps.amazon.com/policies/10), which can be attached to the customer's ecsInstanceRole to automatically provide all necessary permissions.
+
+## Container Instance IAM Role: Fargate
+
+One important thing to note about the container instance role is that it is not available or used by fargate customers. Because fargate customers are not launching or managing their own EC2 instances, they are not able to attach any IAM roles to the instances that their tasks are running on.
+
+## Container Instance IAM Role: Security Considerations
+
+Because this role is supplied by the EC2 instance metadata endpoint, it is available to every container running on the instance. This means that all containers in a task can access the IAM permissions that the customer has given to the ECS agent via the instance role.
+
+Because of this potential security issue, and for fargate, the ECS agent has access to another IAM role via the task execution role.
+
+## Container Instance IAM Role: FAQ
+
+**What/who uses this role?**
+
+The ECS Agent.
+
+**Is this role required?**
+
+Yes for ECS on EC2, No for Fargate.
+
+**How does a customer specify this role?**
+
+Customers must specify this role when launching their container instance via EC2.
+
+## Container Instance IAM Role: FAQ (cont.)
+
+**How is the role accessed?**
+
+The agent accesses this role via the [EC2 instance metadata endpoint](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-metadata.html), meaning any entity on the EC2 instance that can access this endpoint can access these credentials.
+
+**Is there a managed role?**
+
+Yes, [AmazonEC2ContainerServiceforEC2Role](https://naps.amazon.com/policies/10)
+
+## Role 2: Task Execution IAM Role
+
+In some ways, the task execution role can be thought of as Fargate's equivalent to the container instance role. This is partly true, but it is also needed by ECS on EC2 in order to run certain security-sensitive tasks, such as [private registry authentication](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task_execution_IAM_role.html#task-execution-private-auth) and using the [AWS secrets manager](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task_execution_IAM_role.html#task-execution-secrets).
+
+Not all customers need private registry auth nor the secrets manager, and so not all customers need the task execution role.
+
+## Task Execution IAM Role: FAQ
+
+**What/who uses this role?**
+
+The ECS and Fargate Agents.
+
+**Is this role required?**
+
+No, unless:
+
+1. you are using secrets manager or private registry auth with the ECS Agent.
+1. you are pulling a container image from ECR with the Fargate Agent.
+1. you are using the awslogs logs driver with the Fargate Agent.
+
+**How does a customer specify this role?**
+
+Customers must specify this role in their ECS task definition.
+
+## Task Execution IAM Role: FAQ (cont.)
+
+**How is the role accessed?**
+
+The agents access this role via the [Agent Communication Service (ACS)](https://code.amazon.com/packages/MadisonAgentCommunicationService/trees/mainline). Credentials for this role are passed via websocket directly from ACS to the agent, meaning no other entities have access to these credentials.
+
+**Is there a managed role?**
+
+Yes, [AmazonECSTaskExecutionRolePolicy](https://naps.amazon.com/policies/16134)
+
+## Role 3: Task IAM Role
+
+The task IAM role provides customers with a way to provide their tasks with AWS credentials. Not all customers need AWS credentials for their tasks, which is why this role is optional.
+
+The task IAM role is exposed within a task's containers on a special endpoint that all AWS SDKs know how to access (`169.254.170.2$AWS_CONTAINER_CREDENTIALS_RELATIVE_URI`). When this role is specified, the ECS and Fargate agents expose this endpoint so that the customer's application can call whatever AWS APIs they need.
+
+## Task IAM Role: FAQ
+
+**What/who uses this role?**
+
+The containers of a task.
+
+**Is this role required?**
+
+No, unless you want to call AWS APIs from your task containers.
+
+**How does a customer specify this role?**
+
+Customers must specify this role in their ECS task definition.
+
+## Task IAM Role: FAQ (cont.)
+
+**How is the role accessed?**
+
+The agents access this role via the [Agent Communication Service (ACS)](https://code.amazon.com/packages/MadisonAgentCommunicationService/trees/mainline). Credentials for this role are passed via websocket directly from ACS to the agent, meaning no other entities have access to these credentials.
+
+The agent passes these credentials into the customer's container by exposing it on an endpoint only available from within the container: `169.254.170.2$AWS_CONTAINER_CREDENTIALS_RELATIVE_URI`
+
+**Is there a managed role?**
+
+No, it must be fully defined and customized by the customer.
+
+## Further reading:
+
+[https://w.amazon.com/bin/view/EC2/Project_Madison/Agent/Learning/IAMRoles/](https://w.amazon.com/bin/view/EC2/Project_Madison/Agent/Learning/IAMRoles/)
