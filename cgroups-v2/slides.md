@@ -90,11 +90,22 @@ v2
 
 ## cgroups v1: ECS task limits
 
+- ECS tasks with resource limits have their own cgroup created, under which all containers of that task are created.
 - task ID `e39cda25f9824fe9b035e2f57e81c793` has it's own directory within the `memory` control.
 - this task has a 450MB limit (471859200 bytes)
 ```
 $ cat /sys/fs/cgroup/memory/ecs/e39cda25f9824fe9b035e2f57e81c793/memory.limit_in_bytes
 471859200
+```
+
+---
+
+## cgroups v1: ECS task limits
+
+- this task has two containers
+```
+/sys/fs/cgroup/memory/ecs/e39cda25f9824fe9b035e2f57e81c793/TODO
+/sys/fs/cgroup/memory/ecs/e39cda25f9824fe9b035e2f57e81c793/TODO
 ```
 
 ---
@@ -106,6 +117,16 @@ $ cat /sys/fs/cgroup/memory/ecs/e39cda25f9824fe9b035e2f57e81c793/memory.limit_in
 ```
 $ cat /sys/fs/cgroup/ecstasks.slice/ecstasks-e95a40efbde84cbc8600660a109ec194.slice/memory.max
 471859200
+```
+
+---
+
+## cgroups v2: ECS task limits
+
+- this task has two containers
+```
+/sys/fs/cgroup/ecstasks.slice/ecstasks-e95a40efbde84cbc8600660a109ec194.slice/TODO
+/sys/fs/cgroup/ecstasks.slice/ecstasks-e95a40efbde84cbc8600660a109ec194.slice/TODO
 ```
 
 ---
@@ -184,6 +205,8 @@ Apr 15 19:05:21 ip-10-0-0-142.us-west-2.compute.internal systemd[1]: Created sli
 ## cgroups v1: OOM-kill behavior
 
 Docker handles the OOM-kill and (tries) to report it to ecs agent:
+
+TODO see if docker logs OOM-kill with debug logs turned on
 
 ```
 $ sudo cat /var/log/ecs/ecs-agent.log | grep OOM
