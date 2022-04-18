@@ -7,7 +7,7 @@ class: lead
 
 ---
 
-## Intro
+### Intro
 
 - cgroups are a feature provided by the linux kernel to manage, restrict, and audit groups of processes.
 - all linux containers are built on top of cgroups.
@@ -15,7 +15,7 @@ class: lead
 
 ---
 
-## Intro
+### Intro
 
 ```
 $ docker run -d public.ecr.aws/docker/library/busybox:latest sleep 9999
@@ -36,7 +36,7 @@ $ find /sys/fs/cgroup | grep 7ff2ace8e15097939aa2ca98f2179fc216aa9faca0eafdcf92d
 
 ---
 
-## cgroups v1: structure
+### cgroups v1: structure
 
 - cgroups v1 has a structure where a process is split across many sub-directories (memory, blkio, cpu, etc.):
 ```
@@ -56,7 +56,7 @@ $ find /sys/fs/cgroup -type d | grep 7ff2ace8e15097939aa2ca98f2179fc216aa9faca0e
 
 ---
 
-## cgroups v2: unified structure
+### cgroups v2: unified structure
 
 - cgroups v2 has a "unified" structure, in which all of the controls for a process are unified in a single directory:
 ```
@@ -88,7 +88,7 @@ v2
 
 ---
 
-## cgroups v1: ECS task limits
+### cgroups v1: ECS task limits
 
 - ECS tasks with resource limits have their own cgroup created, under which all containers of that task are created.
 - task ID `e39cda25f9824fe9b035e2f57e81c793` has it's own directory within the `memory` control.
@@ -100,17 +100,7 @@ $ cat /sys/fs/cgroup/memory/ecs/e39cda25f9824fe9b035e2f57e81c793/memory.limit_in
 
 ---
 
-## cgroups v1: ECS task limits
-
-- this task has two containers
-```
-/sys/fs/cgroup/memory/ecs/e39cda25f9824fe9b035e2f57e81c793/TODO
-/sys/fs/cgroup/memory/ecs/e39cda25f9824fe9b035e2f57e81c793/TODO
-```
-
----
-
-## cgroups v2: ECS task limits
+### cgroups v2: ECS task limits
 
 - task ID `e95a40efbde84cbc8600660a109ec194` has it's own systemd slice (more on this later).
 - this task has a 450MB limit (471859200 bytes)
@@ -121,26 +111,18 @@ $ cat /sys/fs/cgroup/ecstasks.slice/ecstasks-e95a40efbde84cbc8600660a109ec194.sl
 
 ---
 
-## cgroups v2: ECS task limits
+### cgroup drivers
 
-- this task has two containers
-```
-/sys/fs/cgroup/ecstasks.slice/ecstasks-e95a40efbde84cbc8600660a109ec194.slice/TODO
-/sys/fs/cgroup/ecstasks.slice/ecstasks-e95a40efbde84cbc8600660a109ec194.slice/TODO
-```
-
----
-
-## cgroup drivers
-
-- cgroup drivers (cgroupfs, systemd) and cgroup versions (v1, v2) are technically independent, but,
-- in practice cgroup v1 almost exclusively uses cgroupfs.
-- cgroup v2 almost exclusively uses systemd.
+- **cgroup drivers**: cgroupfs, systemd
+- **cgroup versions**: v1, v2
+- they are technically independent, but, in practice:
+- cgroup v1 <=> cgroupfs
+- cgroup v2 <=> systemd
 - docker and kubernetes both recommend using the systemd driver. [4] [5]
 
 ---
 
-## cgroupfs driver
+### cgroupfs driver
 
 - the cgroupfs driver effectively allows users to create cgroups by creating files and directories in `/sys/fs/cgroup`
 
@@ -151,15 +133,54 @@ $ mkdir -p /sys/fs/cgroup/memory/ecs/e39cda25f9824fe9b035e2f57e81c793
 
 ---
 
-## systemd driver
+### systemd driver
 
-- creating a cgroup with the systemd driver is not as simple, as all cgroups are essentially managed as a systemd unit. [1]
+- All containers and tasks are managed as a systemd unit. [1]
 - **note:** they are systemd slices and scopes, not services. [2] [3]
+- systemd slices can be created with files (like services can), but scopes cannot [7]
+
 ---
 
-## systemd driver
+### systemd driver
 
-- individual docker containers can be viewed under `docker-$CONTAINER_ID.scope`:
+- A slice unit is a concept for hierarchically managing resources of a group of processes. **scope** and **service** units are assigned to a specific slice. [2]
+- A scope unit manages a set of system processes. Unlike service units, scope units manage externally created processes, and do not fork off processes on its own. [3]
+```
+$ tree -d /sys/fs/cgroup/ecstasks.slice
+/sys/fs/cgroup/ecstasks.slice                                                               <-- Parent slice for ECS tasks w/ resource limits
+├── ecstasks-14e4b4156f6b47d18e1ff3cc55a47bc7.slice                                         <-- Task 1 parent slice
+│   ├── docker-5a84a635371cf7f2255700c02a0dde027b62515db33cb14934ab62b7edfc27cf.scope       <-- Task 1 container 1 scope
+│   └── docker-e883b4e9fbc445677c65ce9325a2ec5548c30b2709c02141da64b7992c430afe.scope       <-- Task 1 container 2 scope
+└── ecstasks-ef1d696601704c3ebc321f0932e8a0bf.slice                                         <-- Task 2 parent slice
+    └── docker-16b283f08cc44cc0eb7d6b055a2d42bbc38f53bf32d9f05daa15e7199ff6f9da.scope       <-- Task 2 container 1 scope                      .
+```
+
+---
+
+### systemd driver
+
+- A little more context on systemd slices/services/scopes, most systemd service units are part of the `system.slice` systemd slice.
+- TLDR; a systemd *scope* is similar to a systemd service, but with far fewer features.
+
+```
+$ sudo systemctl status ecs
+● ecs.service - Amazon Elastic Container Service - container agent
+     Loaded: loaded (/usr/lib/systemd/system/ecs.service; enabled; vendor preset: disabled)
+     Active: active (running) since Mon 2022-04-18 20:38:24 UTC; 10s ago
+       Docs: https://aws.amazon.com/documentation/ecs/
+   Main PID: 6035 (amazon-ecs-init)
+      Tasks: 6 (limit: 75910)
+     Memory: 71.9M
+        CPU: 87ms
+     CGroup: /system.slice/ecs.service
+             └─6035 /usr/libexec/amazon-ecs-init start                                                    .
+```
+
+---
+
+### systemd driver
+
+- every docker container is it's own systemd scope `docker-$CONTAINER_ID.scope`
 ```
 $ sudo systemctl status docker-e883b4e9fbc445677c65ce9325a2ec5548c30b2709c02141da64b7992c430afe.scope
 ● docker-e883b4e9fbc445677c65ce9325a2ec5548c30b2709c02141da64b7992c430afe.scope - libcontainer container e883b4e9fbc445677c65ce9325a2ec5548c30b2709c02141da64b7992c430afe
@@ -180,7 +201,7 @@ Apr 15 17:33:31 ip-10-0-0-142.us-west-2.compute.internal systemd[1]: Started lib
 
 ---
 
-## systemd driver
+### systemd driver
 
 - ECS tasks can be viewed under `ecstasks.slice` and `ecstasks-$TASK_ID.slice`:
 ```
@@ -202,9 +223,28 @@ Apr 15 19:05:21 ip-10-0-0-142.us-west-2.compute.internal systemd[1]: Created sli
 
 ---
 
-## cgroups v1: OOM-kill behavior
+### systemd driver
 
-Docker handles the OOM-kill and (tries) to report it to ecs agent:
+- when we create a task, systemd logs it in `/var/log/messages`
+
+```
+$ tail -f /var/log/messages
+systemd[1]: Created slice Slice /ecstasks.
+systemd[1]: Created slice cgroup ecstasks-0a272520dcbb4340a96121fab054a479.slice.
+systemd[1]: Starting Set up policy routes for ens5...
+systemd[1]: refresh-policy-routes@ens5.service: Deactivated successfully.
+systemd[1]: Finished Set up policy routes for ens5.
+systemd[1]: var-lib-docker-overlay2-7d2c540c1a633c2349c3f2ef2a7445dc1800e8bae257c26bf6e9b50ec6d37406\x2dinit-merged.mount: Deactivated successfully.
+dockerd[3]: time="2022-04-18T20:00:33Z" level=info msg="Configured log driver..." container=579341a0143cb9256598d0d7c94fcd7fd8947d51c9fccf5a9e1739bc10580cbb driver=awslogs
+containerd[2]: time="2022-04-18T20:00:33Z" level=info msg="starting signal loop" namespace=moby path=/run/.../moby/579341a0143cb9256598d0d7c94fcd7fd8947d51c9fccf5a9e1739bc10580cbb
+systemd[1]: Started libcontainer container 579341a0143cb9256598d0d7c94fcd7fd8947d51c9fccf5a9e1739bc10580cbb.
+```
+
+---
+
+### cgroups v1: OOM-kill behavior
+
+Kernel handles the OOM-kill and docker (tries) to report it to ecs agent through a container event:
 
 TODO see if docker logs OOM-kill with debug logs turned on
 
@@ -217,9 +257,9 @@ level=info time=2022-04-15T23:21:53Z msg="DockerGoClient: process within contain
 
 ---
 
-## cgroups v2: OOM-kill behavior
+### cgroups v2: OOM-kill behavior
 
-the kernel (systemd) handles OOM-kill and logs it in `/var/log/messages`:
+Kernel handles OOM-kill and systemd logs it in `/var/log/messages`:
 ```
 $ sudo cat /var/log/messages | grep -iI oom
 Apr 15 23:04:52 localhost kernel: head invoked oom-killer: gfp_mask=0x500cc2(GFP_HIGHUSER|__GFP_ACCOUNT), order=0, oom_score_adj=0
@@ -232,7 +272,7 @@ Apr 15 23:04:52 localhost kernel: Memory cgroup out of memory: Killed process 51
 Apr 15 23:04:52 localhost systemd[1]: docker-60ef727c9751aac9084702bca274544f94f1bb070ace95e8a79911c22b01a91d.scope: A process of this unit has been killed by the OOM killer.
 Apr 15 23:04:52 localhost kernel: oom_reaper: reaped process 51947 (tail), now anon-rss:0kB, file-rss:0kB, shmem-rss:0kB
 ```
-and the parent slice remembers!
+and the parent slice remembers! [6]
 ```
 $ cat /sys/fs/cgroup/ecstasks.slice/memory.events
 low 0
@@ -248,8 +288,8 @@ oom_kill 1                                                                      
 Cam Sparr
 cssparr@
 github.com/sparrc
+slides: [github/sparrc/slides/cgroups-v2/slides.md](https://github.com/sparrc/slides/blob/main/cgroups-v2/slides.md)
 ![](https://avatars.githubusercontent.com/u/7155926?s=300&u=6d5636aa89f316288ec27afe89fc4ab6f20fa566)
-
 
 
 <!-- references -->
@@ -259,3 +299,5 @@ github.com/sparrc
 [3]: https://www.freedesktop.org/software/systemd/man/systemd.scope.html "systemd.scope"
 [4]: https://kubernetes.io/docs/tasks/administer-cluster/kubeadm/configure-cgroup-driver/ "kubernetes cgroup driver"
 [5]: https://github.com/moby/moby/pull/40846 "docker cgroup driver"
+[6]: https://github.com/aws/amazon-ecs-logs-collector/pull/68 "collect cgroup v2 events in ecs log collector"
+[7]: https://baykara.medium.com/docker-resource-management-via-cgroups-and-systemd-633b093a835c "creating systemd slices"
