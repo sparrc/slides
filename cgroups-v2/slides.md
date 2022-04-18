@@ -13,6 +13,12 @@ class: lead
 - all linux containers are built on top of cgroups.
 - `/sys/fs/cgroup` is usually the cgroup root.
 
+
+<!--
+Notes
+
+-->
+
 ---
 
 ### Intro
@@ -34,13 +40,25 @@ $ find /sys/fs/cgroup | grep 7ff2ace8e15097939aa2ca98f2179fc216aa9faca0eafdcf92d
 ...
 ```
 
+<!--
+Notes
+- every launched docker container creates it's own cgroup
+- note docker ID
+-->
+
+---
+
+### Intro
+
+- Amazon Linux 2022, Fedora, and Ubuntu all now use cgroups v2 by default.
+- ECS agent added support for cgroups v2 in March 2022: https://github.com/aws/amazon-ecs-agent/pull/3127
+
 ---
 
 ### cgroups v1: structure
 
-- cgroups v1 has a structure where a process is split across many sub-directories (memory, blkio, cpu, etc.):
+- cgroups v1 has a structure where a process's controls are split across many parent directories (memory, blkio, cpu, etc.):
 ```
-$ find /sys/fs/cgroup -type d | grep 7ff2ace8e15097939aa2ca98f2179fc216aa9faca0eafdcf92dd9c755bd7c4f3
 /sys/fs/cgroup/devices/docker/7ff2ace8e15097939aa2ca98f2179fc216aa9faca0eafdcf92dd9c755bd7c4f3
 /sys/fs/cgroup/freezer/docker/7ff2ace8e15097939aa2ca98f2179fc216aa9faca0eafdcf92dd9c755bd7c4f3
 /sys/fs/cgroup/memory/docker/7ff2ace8e15097939aa2ca98f2179fc216aa9faca0eafdcf92dd9c755bd7c4f3
@@ -54,15 +72,24 @@ $ find /sys/fs/cgroup -type d | grep 7ff2ace8e15097939aa2ca98f2179fc216aa9faca0e
 /sys/fs/cgroup/systemd/docker/7ff2ace8e15097939aa2ca98f2179fc216aa9faca0eafdcf92dd9c755bd7c4f3
 ```
 
+<!--
+Notes
+- cgroup root, then 11 parent directories, then docker container cgroup dirs
+-->
+
 ---
 
 ### cgroups v2: unified structure
 
 - cgroups v2 has a "unified" structure, in which all of the controls for a process are unified in a single directory:
 ```
-$ find /sys/fs/cgroup -type d | grep e883b4e9fbc445677c65ce9325a2ec5548c30b2709c02141da64b7992c430afe
 /sys/fs/cgroup/system.slice/docker-e883b4e9fbc445677c65ce9325a2ec5548c30b2709c02141da64b7992c430afe.scope
 ```
+
+<!--
+Notes
+- single directory contains control files for ALL resources!
+-->
 
 ---
 
@@ -86,6 +113,11 @@ v2
 /sys/fs/cgroup/system.slice/docker-e883b4e9fbc445677c65ce9325a2ec5548c30b2709c02141da64b7992c430afe.scope
 ```
 
+<!--
+Notes
+- fewer directories makes it easier to grok, and is why cgroups v2 is also referred to as "unified cgroups"
+-->
+
 ---
 
 ### cgroups v1: ECS task limits
@@ -98,6 +130,13 @@ $ cat /sys/fs/cgroup/memory/ecs/e39cda25f9824fe9b035e2f57e81c793/memory.limit_in
 471859200
 ```
 
+<!--
+Notes
+- v1
+- memory/ecs/TASK_ID is the path for all memory limits
+- cpu/ecs/TASK_ID is the path for all cpu limits
+-->
+
 ---
 
 ### cgroups v2: ECS task limits
@@ -108,6 +147,41 @@ $ cat /sys/fs/cgroup/memory/ecs/e39cda25f9824fe9b035e2f57e81c793/memory.limit_in
 $ cat /sys/fs/cgroup/ecstasks.slice/ecstasks-e95a40efbde84cbc8600660a109ec194.slice/memory.max
 471859200
 ```
+
+<!--
+Notes
+- v2
+- ecstasks.slice/ecstasks-TASK_ID.slice/memory.* for all memory limits
+- ecstasks.slice/ecstasks-TASK_ID.slice/cpu.* for all cpu limits
+-->
+
+---
+
+### v1 vs. v2 task limits
+
+v1
+```
+/sys/fs/cgroup/cpuset/ecs/c71f1a23ddec49b3b1921c06324a1a3a
+/sys/fs/cgroup/cpuset/ecs/c71f1a23ddec49b3b1921c06324a1a3a/ba73fa85bf400117a7c47894d87b8982410cedd86bb39797a282b9571e8a0131
+/sys/fs/cgroup/cpuset/ecs/c71f1a23ddec49b3b1921c06324a1a3a/2ed9902425c6cbc46c22c404645b8ab3e81842f99215f9e6d4f28461d4d4d93c
+/sys/fs/cgroup/memory/ecs/c71f1a23ddec49b3b1921c06324a1a3a
+/sys/fs/cgroup/memory/ecs/c71f1a23ddec49b3b1921c06324a1a3a/ba73fa85bf400117a7c47894d87b8982410cedd86bb39797a282b9571e8a0131
+/sys/fs/cgroup/memory/ecs/c71f1a23ddec49b3b1921c06324a1a3a/2ed9902425c6cbc46c22c404645b8ab3e81842f99215f9e6d4f28461d4d4d93c
+/sys/fs/cgroup/cpu,cpuacct/ecs/c71f1a23ddec49b3b1921c06324a1a3a
+/sys/fs/cgroup/cpu,cpuacct/ecs/c71f1a23ddec49b3b1921c06324a1a3a/ba73fa85bf400117a7c47894d87b8982410cedd86bb39797a282b9571e8a0131
+/sys/fs/cgroup/cpu,cpuacct/ecs/c71f1a23ddec49b3b1921c06324a1a3a/2ed9902425c6cbc46c22c404645b8ab3e81842f99215f9e6d4f28461d4d4d93c
+```
+
+v2
+```
+/sys/fs/cgroup/ecstasks.slice/ecstasks-2296a47d90b74991a428649ff2474cca.slice
+/sys/fs/cgroup/ecstasks.slice/ecstasks-2296a47d90b74991a428649ff2474cca.slice/docker-6f5f11820ddac53cab1b097072e5bbf9a5ea147690531985799f9bf8f60ceee9.scope
+/sys/fs/cgroup/ecstasks.slice/ecstasks-2296a47d90b74991a428649ff2474cca.slice/docker-34c7e3694bffd7543300456c77be7d4533414aef8ec685792b6ce65bfb899bcc.scope
+```
+
+<!--
+Notes
+-->
 
 ---
 
@@ -120,6 +194,12 @@ $ cat /sys/fs/cgroup/ecstasks.slice/ecstasks-e95a40efbde84cbc8600660a109ec194.sl
 - cgroup v2 <=> systemd
 - docker and kubernetes both recommend using the systemd driver. [4] [5]
 
+<!--
+Notes
+- the two cgroup versions are indepedent of cgroup drivers, but in practice v2 is very much
+  tied to the systemd driver because of docker and kubernetes.
+-->
+
 ---
 
 ### cgroupfs driver
@@ -131,6 +211,11 @@ this creates a cgroup for ecs task `e39cda25f9824fe9b035e2f57e81c793`:
 $ mkdir -p /sys/fs/cgroup/memory/ecs/e39cda25f9824fe9b035e2f57e81c793
 ```
 
+<!--
+Notes
+
+-->
+
 ---
 
 ### systemd driver
@@ -138,6 +223,14 @@ $ mkdir -p /sys/fs/cgroup/memory/ecs/e39cda25f9824fe9b035e2f57e81c793
 - All containers and tasks are managed as a systemd unit. [1]
 - **note:** they are systemd slices and scopes, not services. [2] [3]
 - systemd slices can be created with files (like services can), but scopes cannot [7]
+
+<!--
+Notes
+- The three systemd unit types to keep in mind: slice, service, scope.
+- Slices are usually the parents with multiple services and scopes underneath them.
+- Tasks are systemd slices.
+- Containers are systemd scopes.
+-->
 
 ---
 
@@ -149,18 +242,23 @@ $ mkdir -p /sys/fs/cgroup/memory/ecs/e39cda25f9824fe9b035e2f57e81c793
 $ tree -d /sys/fs/cgroup/ecstasks.slice
 /sys/fs/cgroup/ecstasks.slice                                                               <-- Parent slice for ECS tasks w/ resource limits
 ├── ecstasks-14e4b4156f6b47d18e1ff3cc55a47bc7.slice                                         <-- Task 1 parent slice
-│   ├── docker-5a84a635371cf7f2255700c02a0dde027b62515db33cb14934ab62b7edfc27cf.scope       <-- Task 1 container 1 scope
-│   └── docker-e883b4e9fbc445677c65ce9325a2ec5548c30b2709c02141da64b7992c430afe.scope       <-- Task 1 container 2 scope
+│   ├── docker-5a84a635371cf7f2255700c02a0dde027b62515db33cb14934ab62b7edfc27cf.scope       <-- Task 1 container A scope
+│   └── docker-e883b4e9fbc445677c65ce9325a2ec5548c30b2709c02141da64b7992c430afe.scope       <-- Task 1 container B scope
 └── ecstasks-ef1d696601704c3ebc321f0932e8a0bf.slice                                         <-- Task 2 parent slice
-    └── docker-16b283f08cc44cc0eb7d6b055a2d42bbc38f53bf32d9f05daa15e7199ff6f9da.scope       <-- Task 2 container 1 scope                      .
+    └── docker-16b283f08cc44cc0eb7d6b055a2d42bbc38f53bf32d9f05daa15e7199ff6f9da.scope       <-- Task 2 container A scope                      .
 ```
+
+<!--
+Notes
+- Tasks are systemd slices.
+- Containers are systemd scopes.
+-->
 
 ---
 
 ### systemd driver
 
 - A little more context on systemd slices/services/scopes, most systemd service units are part of the `system.slice` systemd slice.
-- TLDR; a systemd *scope* is similar to a systemd service, but with far fewer features.
 
 ```
 $ sudo systemctl status ecs
@@ -175,6 +273,11 @@ $ sudo systemctl status ecs
      CGroup: /system.slice/ecs.service
              └─6035 /usr/libexec/amazon-ecs-init start                                                    .
 ```
+
+<!--
+Notes
+- the ecs service runs in the system slice, along with most services on the instance.
+-->
 
 ---
 
@@ -199,6 +302,12 @@ $ sudo systemctl status docker-e883b4e9fbc445677c65ce9325a2ec5548c30b2709c02141d
 Apr 15 17:33:31 ip-10-0-0-142.us-west-2.compute.internal systemd[1]: Started libcontainer container e883b4e9fbc445677c65ce9325a2ec5548c30b2709c02141da64b7992c430afe.
 ```
 
+<!--
+Notes
+- When using the systemd driver, you can use standard systemctl commands that you're
+  familiar with to query for the status of docker containers.
+-->
+
 ---
 
 ### systemd driver
@@ -221,6 +330,12 @@ $ sudo systemctl status ecstasks.slice
 Apr 15 19:05:21 ip-10-0-0-142.us-west-2.compute.internal systemd[1]: Created slice Slice /ecstasks.           .
 ```
 
+<!--
+Notes
+- You can also use these familiar commands to query info about slices, namely the parent
+  ecstasks slice.
+-->
+
 ---
 
 ### systemd driver
@@ -240,13 +355,16 @@ containerd[2]: time="2022-04-18T20:00:33Z" level=info msg="starting signal loop"
 systemd[1]: Started libcontainer container 579341a0143cb9256598d0d7c94fcd7fd8947d51c9fccf5a9e1739bc10580cbb.
 ```
 
+<!--
+Notes
+- With the systemd driver, all cgroup operations are logged by systemd in the system logs.
+-->
+
 ---
 
 ### cgroups v1: OOM-kill behavior
 
 Kernel handles the OOM-kill and docker (tries) to report it to ecs agent through a container event:
-
-TODO see if docker logs OOM-kill with debug logs turned on
 
 ```
 $ sudo cat /var/log/ecs/ecs-agent.log | grep OOM
@@ -254,6 +372,11 @@ level=info time=2022-04-15T23:21:53Z msg="DockerGoClient: process within contain
     (name: "ecs-stress-ng-mem-1-main-f0fb97ba8ef6b98be201") died due to OOM" \
     module=docker_client.go
 ```
+
+<!--
+Notes
+- TODO
+-->
 
 ---
 
@@ -281,6 +404,11 @@ max 21
 oom 1
 oom_kill 1                                                                                                                      .
 ```
+
+<!--
+Notes
+- TODO
+-->
 
 ---
 
